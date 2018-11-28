@@ -2,3 +2,4 @@
 *.tfstate*
 s3-bucket-name
 docker-*
+terraform.tfvars
