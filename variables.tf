@@ -14,8 +14,8 @@ variable "aws_access_key" {
 }
 
 variable "public_ip" {
-    description = "Your current public IP (curl ipinfo.io/ip)"
-    default = "208.184.251.0"
+    description = "Your current public source address"
+    default = ""
 }
 
 variable "path_to_public_key" {

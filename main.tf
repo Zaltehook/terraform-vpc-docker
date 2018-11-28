@@ -1,9 +1,3 @@
-#
-#
-#
-#
-#
-#
 ##################################################################
 
 #Gets the current Amazon Linux AMI for the region
@@ -33,8 +27,6 @@ module "vpc" {
   }
 }
 
-#TODO redo the security group configs allow egress, and only local ingress
-
 module "docker_sg" {
   source = "terraform-aws-modules/security-group/aws//modules/http-80"
 
@@ -42,35 +34,34 @@ module "docker_sg" {
   description = "Security group for web-server with HTTP ports open within VPC"
   vpc_id      = "${module.vpc.vpc_id}"
 
-  ingress_cidr_blocks = ["${var.private_subnet_cidr}"]
   ingress_cidr_blocks = ["${var.public_subnet_cidr}"]
 }
 
-module "public_host_sg" {
-  source = "terraform-aws-modules/security-group/aws"
+#module "public_host_sg" {
+#  source = "terraform-aws-modules/security-group/aws"
+#
+#  name        = "public-host"
+#  description = "Security group for user-service with custom ports open within VPC"
+#  vpc_id      = "${module.vpc.vpc_id}"
+#
+#  ingress_cidr_blocks      = ["${var.public_ip}/24"]
+#  ingress_rules            = ["ssh-tcp"]
+#  egress_cidr_blocks       = ["0.0.0.0/0"]
+#  egress_rules             = ["all-all"]
+#}
 
-  name        = "public-host"
-  description = "Security group for user-service with custom ports open within VPC"
-  vpc_id      = "${module.vpc.vpc_id}"
-
-  ingress_cidr_blocks      = ["${var.public_ip}/24"]
-  ingress_rules            = ["ssh-tcp"]
-  egress_cidr_blocks       = ["0.0.0.0/0"]
-  egress_rules             = ["all-all"]
-}
-
-module "public_to_private_sg" {
-  source = "terraform-aws-modules/security-group/aws"
-
-  name        = "public-to-private"
-  description = "Security group for user-service with custom ports open within VPC"
-  vpc_id      = "${module.vpc.vpc_id}"
-
-  ingress_cidr_blocks      = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
-  ingress_rules            = ["all-all"]
-  egress_cidr_blocks       = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
-  egress_rules             = ["ssh-tcp"]
-}
+#module "public_to_private_sg" {
+#  source = "terraform-aws-modules/security-group/aws"
+#
+#  name        = "public-to-private"
+#  description = "Security group for user-service with custom ports open within VPC"
+#  vpc_id      = "${module.vpc.vpc_id}"
+#
+#  ingress_cidr_blocks      = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
+#  ingress_rules            = ["all-all"]
+#  egress_cidr_blocks       = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
+#  egress_rules             = ["ssh-tcp"]
+#}
 
 module "asg" {
   source = "terraform-aws-modules/autoscaling/aws"
@@ -81,7 +72,7 @@ module "asg" {
 
   image_id             = "${module.ami.ec2_linux_ami_id}"
   instance_type        = "t2.micro"
-  security_groups      = ["${module.docker_sg.this_security_group_id}", "${module.public_to_private_sg.this_security_group_id}"]
+  security_groups      = ["${module.docker_sg.this_security_group_id}"]# "${module.public_to_private_sg.this_security_group_id}"]
   key_name             = "${var.key_name}"
   iam_instance_profile = "${aws_iam_instance_profile.docker_instance_profile.id}"
 
@@ -125,25 +116,53 @@ module "asg" {
 }
 
 
-#TODO Remove this, only needed for testing
-module "public_host" {
-  source                 = "terraform-aws-modules/ec2-instance/aws"
-  version                = "1.12.0"
+#The following is for a bastion/jump box host to access the ec2 instances created
+#Uses the public IP address in variables.tf to create a security group only your public source address can access
+#
+#module "public_host_sg" {
+#  source = "terraform-aws-modules/security-group/aws"
+#
+#  name        = "public-host"
+#  description = "Security group for user-service with custom ports open within VPC"
+#  vpc_id      = "${module.vpc.vpc_id}"
+#
+#  ingress_cidr_blocks      = ["${var.public_ip}/32"]
+#  ingress_rules            = ["ssh-tcp"]
+#  egress_cidr_blocks       = ["0.0.0.0/0"]
+#  egress_rules             = ["all-all"]
+#}
 
-  name                   = "public-host"
-  instance_count         = "1"
-  associate_public_ip_address = "true"
+#module "public_to_private_sg" {
+#  source = "terraform-aws-modules/security-group/aws"
+#
+#  name        = "public-to-private"
+#  description = "Security group for user-service with custom ports open within VPC"
+#  vpc_id      = "${module.vpc.vpc_id}"
+#
+#  ingress_cidr_blocks      = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
+#  ingress_rules            = ["all-all"]
+#  egress_cidr_blocks       = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
+#  egress_rules             = ["ssh-tcp"]
+#}
 
-  ami                    = "${module.ami.ec2_linux_ami_id}"
-  instance_type          = "t2.micro"
-  key_name               = "${var.key_name}"
-  monitoring             = true
-  vpc_security_group_ids = ["${module.public_host_sg.this_security_group_id}"]
-  subnet_id              = "${module.vpc.public_subnets[0]}"
-
-  tags = {
-    Terraform = "true"
-    Environment = "dev"
-  }
-}
+#module "public_host" {
+#  source                 = "terraform-aws-modules/ec2-instance/aws"
+#  version                = "1.12.0"
+#
+#  name                   = "public-host"
+#  instance_count         = "1"
+#  associate_public_ip_address = "true"
+#
+#  ami                    = "${module.ami.ec2_linux_ami_id}"
+#  instance_type          = "t2.micro"
+#  key_name               = "${var.key_name}"
+#  monitoring             = true
+#  vpc_security_group_ids = ["${module.public_host_sg.this_security_group_id}"]
+#  subnet_id              = "${module.vpc.public_subnets[0]}"
+#
+#  tags = {
+#    Terraform = "true"
+#    Environment = "dev"
+#  }
+#}
 

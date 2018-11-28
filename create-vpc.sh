@@ -5,32 +5,43 @@ unset AWS_SECRET_ACCESS_KEY
 
 usage (){
     echo "
-          Use this script for setting up a scenario 2 VPC and N number of instances passed as an argument.
+          Use this script for setting up a scenario 2 VPC and N number of instances passed as an argument
 
-          To not save AWS keys passing the -a and -s flag will prompt you to enter the AWS Secret Key and Access Key
+          Requirements: Enter the AWS Secret and Access Key in terraform.tfvars file
 
-          usage: $0 [-as] [-c #]
+          usage: $0 [-c|D] [-i #]
 
-            -a      Prompt for AWS Access Key ID
-            -s      Prompt for AWS Secret Access Key
-            -c      Enter in number of instances
+            -c      Flag for creating the VPC and instances
+            -i      Enter in number of instances
 
-          Example: $0 -a -s -c 10
+            OR
+
+            -D      Flag for deleting the VPC and instances
+
+            OPTIONAL
+
+            -r      Region (Defaults to us-east-1)
+
+          Example: $0 -c -i 10
           "
 }
 
 
+REGION=us-east-1
+
 #Inputs for AWS secret
-while getopts 'asc:-h' flag; do
+while getopts 'cDi:-hr:' flag; do
   case "${flag}" in
-    a)
-        read -s -p "AWS Access Key ID: " AWS_ACCESS_KEY_ID
-        echo '';;
-    s)
-        read -s -p "AWS Secret Access Key: " AWS_SECRET_ACCESS_KEY
-        echo '';;
     c)
+        CREATE=true
+        echo '';;
+    D)
+        CREATE=false
+        echo '';;
+    i)
         INSTANCE_COUNT=${OPTARG};;
+    r)
+        REGION=${OPTARG,,};;
     h)
         usage
         exit 0;;
@@ -39,24 +50,35 @@ done
 
 [ -z $1 ] && { usage; exit 0; }
 
-echo "The user entered $AWS_ACCESS_KEY_ID and $AWS_SECRET_ACCESS_KEY"
+export AWS_ACCESS_KEY_ID=$(cat terraform.tfvars | grep access | grep -Po '(?<=")[^"]*(?=")')
+export AWS_SECRET_ACCESS_KEY=$(cat terraform.tfvars | grep secret | grep -Po '(?<=")[^"]*(?=")')
 
-#Generates an SSH keypair for the docker instances to use
-ssh-keygen -t rsa -f ./docker-key -C docker-key -N ""
+if [[ $CREATE == "true" ]]; then
+    #Generates an SSH keypair for the docker instances to use
+    ssh-keygen -t rsa -f ./docker-key -C docker-key -N ""
 
-#Pulls the required modules and initializes the terraform backend
-terraform init -var aws_secret_key=${AWS_SECRET_ACCESS_KEY} -var aws_access_key=${AWS_ACCESS_KEY_ID}
+    #Pulls the required modules and initializes the terraform backend
+    terraform init -var-file=terraform.tfvars
 
-#Applies the Terraform plan to create the VPC and N instances
-terraform apply -auto-approve -var aws_secret_key=${AWS_SECRET_ACCESS_KEY} -var aws_access_key=${AWS_ACCESS_KEY_ID} -var instance_count=${INSTANCE_COUNT}
+    #Applies the Terraform plan to create the VPC and N instances
+    terraform apply -auto-approve -var-file=terraform.tfvars -var instance_count=${INSTANCE_COUNT} -var aws_region=$REGION
 
-export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+    echo "The following instances were created"
+    aws --region $REGION autoscaling describe-auto-scaling-instances --query 'AutoScalingInstances[*].InstanceId' --output text | tr -s '\t' '\n'
 
-aws autoscaling describe-auto-scaling-instances --query 'AutoScalingInstances[*].InstanceId' --output text
+    echo -e "\nWaiting 30s for cloud-init to finish and report results..."
+    sleep 30
+    echo "The following instances succeeded or failed"
+    aws s3api --region $REGION list-objects --bucket $(cat s3-bucket-name) --query 'Contents[*].Key' --output text | tr -s '\t' '\n'
 
-sleep 30
-aws s3api list-objects --bucket $(cat s3-bucket-name) --query 'Contents[*].Key' --output text | tr -s '\t' '\n' | sed s/\/\!\ \g
+elif [[ $CREATE == "false" ]]; then
+
+    #Empties the bucket so it can be deleted
+    for i in $(aws --region $REGION s3api list-objects --bucket $(cat s3-bucket-name) --query 'Contents[*].Key' --output text); do aws --region $REGION s3api delete-object --bucket $(cat s3-bucket-name) --key $i; done
+
+    terraform destroy -force -var-file=terraform.tfvars -var aws_region=$REGION
+
+fi
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
