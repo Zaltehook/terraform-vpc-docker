@@ -5,7 +5,7 @@ module "ami" {
   source = "modules/amazon-linux/"
 }
 
-#
+# Creats the VPC for the environment using 2 AZs in the given region
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
 
@@ -27,6 +27,7 @@ module "vpc" {
   }
 }
 
+# Security group for the docker instances, allows all egress and ingress from eachother
 module "docker_sg" {
   source = "terraform-aws-modules/security-group/aws//modules/http-80"
 
@@ -37,32 +38,7 @@ module "docker_sg" {
   ingress_cidr_blocks = ["${var.public_subnet_cidr}"]
 }
 
-#module "public_host_sg" {
-#  source = "terraform-aws-modules/security-group/aws"
-#
-#  name        = "public-host"
-#  description = "Security group for user-service with custom ports open within VPC"
-#  vpc_id      = "${module.vpc.vpc_id}"
-#
-#  ingress_cidr_blocks      = ["${var.public_ip}/24"]
-#  ingress_rules            = ["ssh-tcp"]
-#  egress_cidr_blocks       = ["0.0.0.0/0"]
-#  egress_rules             = ["all-all"]
-#}
-
-#module "public_to_private_sg" {
-#  source = "terraform-aws-modules/security-group/aws"
-#
-#  name        = "public-to-private"
-#  description = "Security group for user-service with custom ports open within VPC"
-#  vpc_id      = "${module.vpc.vpc_id}"
-#
-#  ingress_cidr_blocks      = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
-#  ingress_rules            = ["all-all"]
-#  egress_cidr_blocks       = ["${var.private_subnet_cidr}" , "${var.public_subnet_cidr}"]
-#  egress_rules             = ["ssh-tcp"]
-#}
-
+#Creates the autoscaling group and launch configuration for the docker instances
 module "asg" {
   source = "terraform-aws-modules/autoscaling/aws"
   name = "docker"
